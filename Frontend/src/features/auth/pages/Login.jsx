@@ -13,10 +13,7 @@ const Login = () => {
 
     const user = useSelector(state => state.auth.user)
     const loading = useSelector(state => state.auth.loading)
-    if (!loading && user) {
-        return <Navigate to="/" replace />
-    }
-
+    
     const [errorMsg, setErrorMsg] = useState('')
     const { loginUser } = useAuth()
 
@@ -41,12 +38,15 @@ const Login = () => {
             setErrorMsg(error?.message || 'Login failed. Please try again.')
         }
     }
-
+    
     const handleSocialLogin = (provider) => {
         console.log('Login with:', provider)
         // Add social login logic here
     }
-
+    
+    if (!loading && user) {
+        return <Navigate to="/" replace />
+    }
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-950">
             {/* Header */}
