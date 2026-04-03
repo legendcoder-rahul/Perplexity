@@ -34,3 +34,13 @@ export async function getMe(){
         throw error
     }
 }
+
+export async function logout(){
+        try {
+            const response = await api.get('/api/auth/logout')
+            return response.data
+        } catch (error) {
+            console.error('Logout error:', error.response?.data || error.message)
+            throw error
+        }
+}
