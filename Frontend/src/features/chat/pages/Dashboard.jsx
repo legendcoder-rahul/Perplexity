@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef } from 'react'
 import { useSelector } from 'react-redux'
+import ReactMarkdown from 'react-markdown'
 import { useChat } from '../hooks/useChat'
 import { SidebarContent } from '../../components/Sidebar'
+
 
 const GlobeIcon = () => (
     <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -33,16 +35,26 @@ const MenuIcon = () => (
 const Dashboard = () => {
     const chat = useChat()
     const { user } = useSelector(state => state.auth)
+    const { chats, currentChatId, error: reduxError } = useSelector(state => state.chat)
+    const currentChat = currentChatId ? chats[currentChatId] : null
+    const messages = currentChat?.messages || []
 
     const [activeNav, setActiveNav] = useState('Home')
     const [query, setQuery] = useState('')
     const [drawerOpen, setDrawerOpen] = useState(false)
-    const [messages, setMessages] = useState([])
-    const [hasStartedChat, setHasStartedChat] = useState(false)
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
-
+    const [errorMsg, setErrorMsg] = useState('')
     const bottomRef = useRef(null)
     const messagesContainerRef = useRef(null)
+
+    // Handle Redux error state
+    useEffect(() => {
+        if (reduxError) {
+            setErrorMsg(reduxError)
+            const timer = setTimeout(() => setErrorMsg(''), 5000)
+            return () => clearTimeout(timer)
+        }
+    }, [reduxError])
 
     useEffect(() => {
         const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -51,8 +63,11 @@ const Dashboard = () => {
     }, [])
 
     useEffect(() => {
-        if (chat) chat.initializeSocketConnection()
-    }, [chat])
+        if (chat) {
+            chat.handleGetChats()
+        }
+
+    }, []) // Only run once on component mount
 
     useEffect(() => {
         if (messagesContainerRef.current) {
@@ -60,33 +75,39 @@ const Dashboard = () => {
         }
     }, [messages])
 
-    const handleSend = () => {
+    useEffect(() => {
+        console.log('📊 Chat state updated:', { currentChatId, messagesCount: messages.length, messages })
+    }, [currentChatId, messages])
+
+    const handleSend = async () => {
         if (!query.trim()) return
 
-        const userMsg = {
-            id: Date.now(),
-            text: query,
-            sender: 'user'
-        }
-
-        setMessages(prev => [...prev, userMsg])
-        setHasStartedChat(true)
+        const trimmedQuery = query.trim()
+        console.log('📤 Attempting to send message:', { trimmedQuery, currentChatId })
         setQuery('')
-
-        // Simulate AI response
-        setTimeout(() => {
-            setMessages(prev => [
-                ...prev,
-                { id: Date.now() + 1, text: 'This is an AI response. Integration coming soon! 🤖', sender: 'bot' }
-            ])
-        }, 700)
+        setErrorMsg('')
+        
+        try {
+            console.log('Sending message from Dashboard:', trimmedQuery)
+            await chat.handleSendMessage({ message: trimmedQuery, chatId: currentChatId })
+            console.log('✅ Message sent successfully. New currentChatId:', currentChatId)
+        } catch (error) {
+            console.error('Failed to send message:', error)
+            const errorMessage = error.response?.data?.message || error.message || 'Failed to send message'
+            setErrorMsg(errorMessage)
+            setQuery(trimmedQuery) // restore query on error
+        }
     }
 
+    
     return (
         <div className="flex min-h-screen bg-[#000] text-slate-200 font-sans">
 
             {/* DESKTOP SIDEBAR */}
             <aside className="hidden md:flex w-[230px] min-h-screen bg-[#000] border-r border-white/[0.06] flex-col shrink-0">
+                <div className="px-4 py-4 border-b border-white/[0.05]">
+                    <span className="text-white text-lg font-bold">IndoAI</span>
+                </div>
                 <SidebarContent activeNav={activeNav} setActiveNav={setActiveNav} />
             </aside>
 
@@ -127,7 +148,7 @@ const Dashboard = () => {
             <div className="flex-1 flex flex-col min-w-0 relative">
 
                 {/* HEADER */}
-                <header className="flex items-center justify-between px-4 md:px-8 py-3 border-b border-white/[0.05] bg-[#000]/50 backdrop-blur">
+                <header className="sticky top-0 z-40 flex items-center justify-between px-4 md:px-8 py-3 border-b border-white/[0.05] bg-[#000]/95 backdrop-blur">
                     <div className="flex items-center gap-3">
                         <button
                             onClick={() => setDrawerOpen(!drawerOpen)}
@@ -147,30 +168,67 @@ const Dashboard = () => {
                     </div>
                 </header>
 
+                {/* ERROR MESSAGE */}
+                {errorMsg && (
+                    <div className="bg-red-500/10 border-b border-red-500/30 text-red-400 px-4 md:px-8 py-3 flex items-start gap-2">
+                        <svg className="w-5 h-5 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-sm flex-1">{errorMsg}</span>
+                        <button 
+                            onClick={() => setErrorMsg('')}
+                            className="text-red-400 hover:text-red-300 font-bold"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                )}
+
                 {/* CHAT MESSAGES CONTAINER */}
                 <div
                     ref={messagesContainerRef}
-                    className={`flex-1 w-full overflow-y-auto ${hasStartedChat ? 'block' : 'hidden'}`}
+                    className={`flex-1 w-full overflow-y-auto ${messages.length > 0 ? 'block' : 'hidden'}`}
                 >
                     <div className="max-w-[800px] mx-auto px-4 py-6 pb-32">
-                        {messages.map(msg => (
+                        {messages.map((msg, idx) => (
                             <div
-                                key={msg.id}
-                                className={`flex gap-3 mb-6 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                                key={idx}
+                                className={`flex gap-3 mb-6 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                             >
-                                {msg.sender === 'bot' && (
+                                {msg.role === 'ai' && (
                                     <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                                         AI
                                     </div>
                                 )}
                                 <div
                                     className={`px-4 py-3 rounded-2xl max-w-[70%] md:max-w-[60%] text-sm leading-relaxed
-                      ${msg.sender === 'user'
+                      ${msg.role === 'user'
                                             ? 'bg-indigo-600 text-white rounded-br-sm'
                                             : 'bg-white/[0.08] text-slate-200 rounded-bl-sm border border-white/10'
                                         }`}
                                 >
-                                    {msg.text}
+                                    {msg.role === 'ai' ? (
+                                        <ReactMarkdown
+                                            components={{
+                                                p: ({ node, ...props }) => <p className="mb-2" {...props} />,
+                                                h1: ({ node, ...props }) => <h1 className="text-lg font-bold mb-2" {...props} />,
+                                                h2: ({ node, ...props }) => <h2 className="text-base font-bold mb-2" {...props} />,
+                                                h3: ({ node, ...props }) => <h3 className="text-sm font-bold mb-2" {...props} />,
+                                                ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2" {...props} />,
+                                                ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2" {...props} />,
+                                                li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                                                code: ({ node, inline, ...props }) => inline ? 
+                                                    <code className="bg-white/[0.1] px-1.5 py-0.5 rounded text-yellow-300 font-mono text-xs" {...props} /> :
+                                                    <code className="bg-white/[0.1] px-2 py-1 rounded block my-2 text-yellow-300 font-mono text-xs" {...props} />,
+                                                blockquote: ({ node, ...props }) => <blockquote className="border-l-2 border-indigo-500 pl-3 italic my-2" {...props} />,
+                                                a: ({ node, ...props }) => <a className="text-indigo-400 hover:underline" {...props} />,
+                                            }}
+                                        >
+                                            {msg.content}
+                                        </ReactMarkdown>
+                                    ) : (
+                                        msg.content
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -179,7 +237,7 @@ const Dashboard = () => {
                 </div>
 
                 {/* CENTER UI (FIRST LOAD) */}
-                {!hasStartedChat && (
+                {messages.length === 0 && (
                     <div className="flex-1 flex flex-col items-center justify-center px-4 gap-6 pb-32">
                         <h1 className="text-[clamp(28px,5vw,52px)] font-bold text-white text-center leading-tight">
                             Where knowledge begins.
@@ -200,7 +258,7 @@ const Dashboard = () => {
                 )}
 
                 {/* INPUT BOX - STICKY AT BOTTOM */}
-                <div className="fixed bottom-0 left-0 right-0 md:left-[230px] bg-gradient-to-t from-[#000] via-[#000] to-transparent pt-6 pb-4 px-4 md:px-8">
+                <div className="fixed bottom-0 left-0 right-0 md:pl-[230px] bg-gradient-to-t from-[#000] via-[#000] to-transparent pt-6 pb-4 px-4 md:px-8">
                     <div className="max-w-[660px] mx-auto">
                         <div className="bg-white/[0.04] border border-white/10 rounded-[14px] overflow-hidden
                                       focus-within:border-indigo-500/40 focus-within:bg-white/[0.06] transition-all">

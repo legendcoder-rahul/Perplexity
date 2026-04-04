@@ -1,6 +1,9 @@
-import { useState } from 'react'
-import { useSelector } from 'react-redux'
+import { useState, useEffect } from 'react'
+import { useSelector, useDispatch } from 'react-redux'
 import { useAuth } from '../auth/hook/useAuth'
+import { useChat } from '../chat/hooks/useChat'
+import { setCurrentChatId } from '../chat/chat.slice'
+import { getChats } from '../chat/service/chat.api'
 
 
 const HomeIcon = ({ className = 'w-4 h-4 shrink-0' }) => (
@@ -47,12 +50,25 @@ const recentHistory = [
 
 export const SidebarContent = ({ activeNav, setActiveNav, onNavClick }) => {
     const { user } = useSelector(state => state.auth || {})
+    const { chats } = useSelector(state => state.chat || {})
     const { logoutUser } = useAuth()
+    const dispatch = useDispatch()
+    const { handleOpenChat } = useChat()
     const navItems = [
         { label: 'Home', icon: <HomeIcon /> },
         { label: 'Discover', icon: <DiscoverIcon /> },
         { label: 'Library', icon: <LibraryIcon /> },
     ]
+
+    const openChat = (chatId) => {
+        handleOpenChat(chatId, chats)
+        onNavClick?.()
+    }
+
+    // Convert chats object to array and sort by lastUpdated
+    const chatList = Object.values(chats || {})
+        .sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated))
+        .slice(0, 10) // Show only last 10 chats
 
     return (      
     <div className="bg-transparent flex-1 flex flex-col">
@@ -87,24 +103,31 @@ export const SidebarContent = ({ activeNav, setActiveNav, onNavClick }) => {
             </nav>
 
             {/* Recent History Header */}
-            <p className="px-5 pt-5 pb-2 text-[9px] tracking-[2.5px] uppercase text-slate-700 font-medium">
-                Recent History
-            </p>
+            {chatList.length > 0 && (
+                <p className="px-5 pt-5 pb-2 text-[9px] tracking-[2.5px] uppercase text-slate-700 font-medium">
+                    Recent History
+                </p>
+            )}
 
             {/* Recent Chats List */}
             <div className="space-y-0.5 overflow-y-auto flex-1 px-2 ">
-                {recentHistory.map(item => (
-                    <button
-                        key={item.id}
-                        className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-[7px]
-                                   cursor-pointer hover:bg-white/[0.04] transition-all group"
-                    >
-                        <div className={`w-[26px] h-[26px] rounded-[7px] shrink-0 ${item.bg}`} />
-                        <span className="text-[12px] text-slate-600 group-hover:text-slate-500 truncate text-left">
-                            {item.title}
-                        </span>
-                    </button>
-                ))}
+                {chatList.length > 0 ? (
+                    chatList.map(item => (
+                        <button
+                            key={item.id}
+                            onClick={() => openChat(item.id)}
+                            className="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-[7px]
+                                       cursor-pointer hover:bg-white/[0.04] transition-all group"
+                        >
+                            <div className="w-[26px] h-[26px] rounded-[7px] shrink-0 bg-indigo-950" />
+                            <span className="text-[12px] text-slate-600 group-hover:text-slate-500 truncate text-left">
+                                {item.title}
+                            </span>
+                        </button>
+                    ))
+                ) : (
+                    <p className="text-[12px] text-slate-700 px-3 py-4 text-center">No chats yet. Start a new conversation!</p>
+                )}
             </div>
 
             {/* Footer */}
@@ -117,20 +140,20 @@ export const SidebarContent = ({ activeNav, setActiveNav, onNavClick }) => {
                 </button>
 
                 {/* User Profile */}
-                <div className="flex items-center gap-2.5 absolute bottom-3 left-3 right-3 bg-white/[0.03] border border-white/[0.07]
+                <div className="flex items-center gap-2.5 bg-white/[0.03] border border-white/[0.07]
                         rounded-[10px] p-2.5 cursor-pointer hover:bg-white/[0.05] transition-all">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500
                           flex items-center justify-center text-[13px] font-semibold text-white shrink-0">
                         {user?.username ? user.username.charAt(0).toUpperCase() : 'U'}
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium text-slate-400 truncate">
                             {user?.username || 'User'}
                         </p>
                         <p className="text-[9px] tracking-[1.5px] uppercase text-indigo-500 font-semibold">Pro</p>
                     </div>
                     <button 
-                        className="text-[12px] font-medium text-slate-600 hover:text-slate-400 transition-all ml-auto"
+                        className="px-2 py-1 text-[11px] font-medium text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10 rounded transition-all whitespace-nowrap"
                         onClick={logoutUser}
                     >
                         Logout
